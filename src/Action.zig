@@ -1,0 +1,5 @@
+type: enum { ssh, rdp },
+host: []const u8,
+user: ?[]const u8 = null,
+password: ?[]const u8 = null,
+address: ?[]const u8 = null,
