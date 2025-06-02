@@ -28,7 +28,10 @@ pub fn main() !void {
         const arena_allocator = arena.allocator();
 
         var reader = json.reader(arena_allocator, connection.stream.reader());
-        var result = try json.parseFromTokenSource(Action, arena_allocator, &reader, .{});
+        var result = json.parseFromTokenSource(Action, arena_allocator, &reader, .{}) catch |err| {
+            log.warn("{s}: Failed to parse JSON.", .{@errorName(err)});
+            continue;
+        };
         try processManager.execute(&result.value);
     } else |err| {
         return err;

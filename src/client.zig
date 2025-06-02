@@ -5,7 +5,7 @@ const io = std.io;
 const json = std.json;
 const net = std.net;
 const clap = @import("clap");
-const Action = @import("action.zig");
+const Action = @import("Action.zig");
 
 const app_name = "ssh-rdp";
 
@@ -41,24 +41,8 @@ pub fn main() !void {
         return clap.help(io.getStdErr().writer(), clap.Help, &parameters, .{});
     }
 
-    if (response.args.user == null and response.args.password == null and response.args.address == null) {
-        try send(
-            .{
-                .type = .ssh,
-                .host = response.positionals[0].?,
-            },
-        );
-    } else {
-        try send(
-            .{
-                .type = .rdp,
-                .host = response.positionals[0].?,
-                .user = response.args.user,
-                .password = response.args.password,
-                .address = response.args.address,
-            },
-        );
-    }
+    const action = Action.init(response.positionals[0].?, response.args.user, response.args.password, response.args.address);
+    try send(action);
 }
 
 fn send(action: Action) !void {

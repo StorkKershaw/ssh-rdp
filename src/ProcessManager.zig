@@ -1,33 +1,29 @@
 const std = @import("std");
 const fmt = std.fmt;
-const fs = std.fs;
-const heap = std.heap;
 const log = std.log;
 const mem = std.mem;
-const time = std.time;
-const windows = std.os.windows;
 const Thread = std.Thread;
 const Action = @import("Action.zig");
-const ChildProcess = @import("ChildProcess.zig");
+const Process = @import("Process.zig");
 const credential = @import("credential.zig");
 const rdp = @import("rdp.zig");
 const Self = @This();
-const ProcessHashMap = std.StringHashMap(ChildProcess);
+const ProcessHashMap = std.StringHashMap(Process);
 const Entry = ProcessHashMap.Entry;
 const Callback = fn (self: *const Self, entry: Entry) fmt.AllocPrintError!void;
 
 allocator: mem.Allocator,
 processes: ProcessHashMap,
 
+fn writeLog(comptime format: []const u8, entry: Entry) void {
+    log.info(format, .{ entry.key_ptr.*, entry.value_ptr.pid });
+}
+
 pub fn init(allocator: mem.Allocator) !Self {
     return .{
         .allocator = allocator,
         .processes = ProcessHashMap.init(allocator),
     };
-}
-
-fn writeLog(comptime format: []const u8, entry: Entry) void {
-    log.info(format, .{ entry.key_ptr.*, entry.value_ptr.pid });
 }
 
 fn remove(self: *Self, entry: Entry) void {
@@ -39,10 +35,7 @@ fn remove(self: *Self, entry: Entry) void {
 pub fn deinit(self: *Self) void {
     var iterator = self.processes.iterator();
     while (iterator.next()) |entry| {
-        entry.value_ptr.kill() catch {
-            writeLog("Failed to terminate process '{s}' ({d}).", entry);
-            continue;
-        };
+        entry.value_ptr.kill();
         writeLog("Terminated process '{s}' ({d}).", entry);
 
         writeLog("Removing process '{s}' ({d}).", entry);
@@ -54,7 +47,7 @@ pub fn deinit(self: *Self) void {
 fn runExitHandler(self: *Self, entry: Entry, comptime on_exit: ?Callback) !void {
     writeLog("Callback thread for process '{s}' ({d}) has started.", entry);
 
-    try entry.value_ptr.wait();
+    entry.value_ptr.wait();
     writeLog("Process '{s}' ({d}) has exited.", entry);
 
     if (on_exit) |callback| {
@@ -79,10 +72,7 @@ fn exitSSHTunnel(self: *const Self, rdp_entry: Entry) fmt.AllocPrintError!void {
             writeLog("Process '{s}' ({d}) has exited.", ssh_entry);
             return;
         }
-        ssh_entry.value_ptr.kill() catch {
-            writeLog("Failed to terminate process '{s}' ({d}).", ssh_entry);
-            return;
-        };
+        ssh_entry.value_ptr.kill();
         writeLog("Terminated process '{s}' ({d}).", ssh_entry);
     }
 }
@@ -99,7 +89,7 @@ pub fn execute(self: *Self, action: *Action) !void {
                 return;
             }
 
-            result.value_ptr.* = try ChildProcess.spawn(self.allocator, "ssh.exe {s}", .{action.host});
+            result.value_ptr.* = try Process.init(self.allocator, "ssh.exe {s}", .{action.host});
             const entry: Entry = .{ .key_ptr = result.key_ptr, .value_ptr = result.value_ptr };
             writeLog("Started process '{s}' ({d}).", entry);
 
@@ -140,7 +130,7 @@ pub fn execute(self: *Self, action: *Action) !void {
             defer self.allocator.free(file_path);
             log.info("Created RDP config file '{s}'.", .{file_path});
 
-            result.value_ptr.* = try ChildProcess.spawn(self.allocator, "mstsc.exe {s}", .{file_path});
+            result.value_ptr.* = try Process.init(self.allocator, "mstsc.exe {s}", .{file_path});
             const entry: Entry = .{ .key_ptr = result.key_ptr, .value_ptr = result.value_ptr };
             writeLog("Started process '{s}' ({d}).", entry);
 

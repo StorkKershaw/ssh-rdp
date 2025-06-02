@@ -2,7 +2,7 @@ const std = @import("std");
 
 const config = .{
     .app_name = "ssh-rdp",
-    .app_version = "0.0.3",
+    .app_version = "0.0.4",
     .app_publisher = "StorkKershaw",
     .app_url = "https://github.com/StorkKershaw/ssh-rdp",
 };
@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    server_exe.subsystem = if (optimize == .Debug) .Console else .Windows;
     server_exe.root_module.addImport("win32", win32.module("win32"));
 
     const clap = b.dependency("clap", .{});
