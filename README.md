@@ -1,20 +1,20 @@
 # ssh-rdp
 
-## Prerequisites
+## Development Environment
+
+### Prerequisites
+
+- Zig 0.14.0
+- Inno Setup 6 Command-Line Compiler (ISCC)
+
+### Running in Debug Mode
 
 ```shell
-$ zig version
-0.14.0
+$ zig build server   # Build and run the server in debug mode
+$ zig build client   # Build and run the client in debug mode
 ```
 
-## Debug run
-
-```shell
-$ zig build server # for debugging server
-$ zig build client # for debugging client
-```
-
-## Build
+### Building for Release
 
 ```shell
 $ zig build -Doptimize=ReleaseSmall

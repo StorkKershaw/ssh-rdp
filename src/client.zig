@@ -4,10 +4,9 @@ const heap = std.heap;
 const io = std.io;
 const json = std.json;
 const net = std.net;
+const config = @import("config");
 const clap = @import("clap");
 const Action = @import("Action.zig");
-
-const app_name = "ssh-rdp";
 
 pub fn main() !void {
     var general_purpose_allocator = heap.GeneralPurposeAllocator(.{}){};
@@ -38,7 +37,17 @@ pub fn main() !void {
     defer response.deinit();
 
     if (response.args.help != 0 or response.positionals.len == 0) {
-        return clap.help(io.getStdErr().writer(), clap.Help, &parameters, .{});
+        const writer = io.getStdErr().writer();
+        try writer.print(
+            \\{s} v{s}
+            \\$ {s} [options] [host]
+            \\
+            \\
+        ,
+            .{ config.app_name, config.app_version, config.app_name },
+        );
+        try clap.help(writer, clap.Help, &parameters, .{});
+        return;
     }
 
     const action = Action.init(response.positionals[0].?, response.args.user, response.args.password, response.args.address);
