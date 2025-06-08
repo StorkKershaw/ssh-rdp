@@ -1,18 +1,20 @@
 const std = @import("std");
 const debug = std.debug;
-const heap = std.heap;
 const json = std.json;
 const log = std.log;
-const net = std.net;
+const Address = std.net.Address;
+const ArenaAllocator = std.heap.ArenaAllocator;
+const GeneralPurposeAllocator = std.heap.GeneralPurposeAllocator;
+const config = @import("config");
 const Action = @import("Action.zig");
 const ProcessManager = @import("ProcessManager.zig");
 
 pub fn main() !void {
-    var general_purpose_allocator = heap.GeneralPurposeAllocator(.{}){};
+    var general_purpose_allocator = GeneralPurposeAllocator(.{}){};
     defer debug.assert(general_purpose_allocator.deinit() == .ok);
     const allocator = general_purpose_allocator.allocator();
 
-    const address = try net.Address.parseIp4("127.0.0.1", 1999);
+    const address = try Address.parseIp4(config.app_host, config.app_port);
     var server = try address.listen(.{ .reuse_port = true });
     defer server.deinit();
     log.info("Listening on {}.", .{address});
@@ -23,7 +25,7 @@ pub fn main() !void {
     while (server.accept()) |connection| {
         defer connection.stream.close();
 
-        var arena = heap.ArenaAllocator.init(allocator);
+        var arena = ArenaAllocator.init(allocator);
         defer arena.deinit();
         const arena_allocator = arena.allocator();
 

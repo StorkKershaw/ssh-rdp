@@ -3,22 +3,24 @@ const fmt = std.fmt;
 const mem = std.mem;
 const unicode = std.unicode;
 const windows = std.os.windows;
+const Allocator = std.mem.Allocator;
 const win32 = @import("win32");
 const foundation = win32.foundation;
 const threading = win32.system.threading;
 const Self = @This();
 
-allocator: mem.Allocator,
-command_line: [:0]const u16,
-startup_info: threading.STARTUPINFOW,
-process_info: threading.PROCESS_INFORMATION,
+allocator: Allocator,
+process_handle: foundation.HANDLE,
+thread_handle: foundation.HANDLE,
 pid: u32,
 
-pub fn init(allocator: mem.Allocator, comptime format: []const u8, values: anytype) !Self {
+pub fn init(allocator: Allocator, comptime format: []const u8, values: anytype) !Self {
     const command_line_utf8 = try fmt.allocPrint(allocator, format, values);
     defer allocator.free(command_line_utf8);
 
     const command_line = try unicode.utf8ToUtf16LeAllocZ(allocator, command_line_utf8);
+    defer allocator.free(command_line);
+
     var startup_info = mem.zeroInit(threading.STARTUPINFOW, .{ .cb = @sizeOf(threading.STARTUPINFOW) });
     var process_info = mem.zeroInit(threading.PROCESS_INFORMATION, .{});
 
@@ -39,22 +41,20 @@ pub fn init(allocator: mem.Allocator, comptime format: []const u8, values: anyty
 
     return .{
         .allocator = allocator,
-        .command_line = command_line,
-        .startup_info = startup_info,
-        .process_info = process_info,
+        .process_handle = process_info.hProcess.?,
+        .thread_handle = process_info.hThread.?,
         .pid = pid,
     };
 }
 
 pub fn deinit(self: *Self) void {
-    _ = foundation.CloseHandle(self.process_info.hProcess);
-    _ = foundation.CloseHandle(self.process_info.hThread);
-    self.allocator.free(self.command_line);
+    _ = foundation.CloseHandle(self.process_handle);
+    _ = foundation.CloseHandle(self.thread_handle);
 }
 
 pub fn isAlive(self: *const Self) bool {
     var exit_code: u32 = undefined;
-    if (threading.GetExitCodeProcess(self.process_info.hProcess, &exit_code) == 0) {
+    if (threading.GetExitCodeProcess(self.process_handle, &exit_code) == 0) {
         return false;
     }
 
@@ -62,9 +62,13 @@ pub fn isAlive(self: *const Self) bool {
 }
 
 pub fn wait(self: *const Self) void {
-    _ = threading.WaitForSingleObject(self.process_info.hProcess, windows.INFINITE);
+    _ = threading.WaitForSingleObject(self.process_handle, windows.INFINITE);
+}
+
+pub fn waitWith(self: *const Self, other: *const Self) void {
+    _ = threading.WaitForMultipleObjects(2, &.{ self.process_handle, other.process_handle }, windows.FALSE, windows.INFINITE);
 }
 
 pub fn kill(self: *const Self) void {
-    _ = threading.TerminateProcess(self.process_info.hProcess, 0);
+    _ = threading.TerminateProcess(self.process_handle, 0);
 }

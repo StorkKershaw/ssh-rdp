@@ -1,25 +1,23 @@
 const std = @import("std");
-const fmt = std.fmt;
 const log = std.log;
-const mem = std.mem;
+const Allocator = std.mem.Allocator;
 const Thread = std.Thread;
 const Action = @import("Action.zig");
 const Process = @import("Process.zig");
 const credential = @import("credential.zig");
 const rdp = @import("rdp.zig");
 const Self = @This();
-const ProcessHashMap = std.StringHashMap(Process);
+const ProcessPair = struct {
+    ssh: Process,
+    rdp: ?Process,
+};
+const ProcessHashMap = std.StringHashMap(ProcessPair);
 const Entry = ProcessHashMap.Entry;
-const Callback = fn (self: *const Self, entry: Entry) fmt.AllocPrintError!void;
 
-allocator: mem.Allocator,
+allocator: Allocator,
 processes: ProcessHashMap,
 
-fn writeLog(comptime format: []const u8, entry: Entry) void {
-    log.info(format, .{ entry.key_ptr.*, entry.value_ptr.pid });
-}
-
-pub fn init(allocator: mem.Allocator) !Self {
+pub fn init(allocator: Allocator) !Self {
     return .{
         .allocator = allocator,
         .processes = ProcessHashMap.init(allocator),
@@ -27,7 +25,6 @@ pub fn init(allocator: mem.Allocator) !Self {
 }
 
 fn remove(self: *Self, entry: Entry) void {
-    entry.value_ptr.deinit();
     self.allocator.free(entry.key_ptr.*);
     self.processes.removeByPtr(entry.key_ptr);
 }
@@ -35,86 +32,80 @@ fn remove(self: *Self, entry: Entry) void {
 pub fn deinit(self: *Self) void {
     var iterator = self.processes.iterator();
     while (iterator.next()) |entry| {
-        entry.value_ptr.kill();
-        writeLog("Terminated process '{s}' ({d}).", entry);
+        if (entry.value_ptr.rdp) |rdp_process| {
+            log.info("Terminating RDP process '{s}' ({d}).", .{ entry.key_ptr.*, rdp_process.pid });
+            rdp_process.kill();
+        } else {
+            log.info("Terminating SSH process '{s}' ({d}).", .{ entry.key_ptr.*, entry.value_ptr.ssh.pid });
+            entry.value_ptr.ssh.kill();
+        }
 
-        writeLog("Removing process '{s}' ({d}).", entry);
         self.remove(entry);
     }
     self.processes.deinit();
 }
 
-fn runExitHandler(self: *Self, entry: Entry, comptime on_exit: ?Callback) !void {
-    writeLog("Callback thread for process '{s}' ({d}) has started.", entry);
+fn runExitHandler(self: *Self, entry: Entry) !void {
+    if (entry.value_ptr.rdp) |rdp_process| {
+        log.info("Callback thread for RDP process '{s}' ({d}) has started.", .{ entry.key_ptr.*, rdp_process.pid });
 
-    entry.value_ptr.wait();
-    writeLog("Process '{s}' ({d}) has exited.", entry);
-
-    if (on_exit) |callback| {
-        writeLog("Running exit handler for process '{s}' ({d})...", entry);
-        try callback(self, entry);
-    }
-    writeLog("Removing process '{s}' ({d}).", entry);
-    self.remove(entry);
-}
-
-fn spawnManageThread(self: *Self, entry: Entry, comptime on_exit: ?Callback) !void {
-    const thread = try Thread.spawn(.{}, runExitHandler, .{ self, entry, on_exit });
-    thread.detach();
-}
-
-fn exitSSHTunnel(self: *const Self, rdp_entry: Entry) fmt.AllocPrintError!void {
-    const ssh_key = try fmt.allocPrint(self.allocator, "ssh:{s}", .{rdp_entry.key_ptr.*[4..]});
-    defer self.allocator.free(ssh_key);
-
-    if (self.processes.getEntry(ssh_key)) |ssh_entry| {
-        if (!ssh_entry.value_ptr.isAlive()) {
-            writeLog("Process '{s}' ({d}) has exited.", ssh_entry);
-            return;
+        rdp_process.waitWith(&entry.value_ptr.ssh);
+        if (rdp_process.isAlive()) {
+            log.info("Terminating RDP process '{s}' ({d}).", .{ entry.key_ptr.*, rdp_process.pid });
+            rdp_process.kill();
+        } else {
+            log.info("RDP process '{s}' ({d}) has exited.", .{ entry.key_ptr.*, rdp_process.pid });
         }
-        ssh_entry.value_ptr.kill();
-        writeLog("Terminated process '{s}' ({d}).", ssh_entry);
+        entry.value_ptr.rdp.?.deinit();
+        entry.value_ptr.rdp = null;
+
+        if (entry.value_ptr.ssh.isAlive()) {
+            log.info("Terminating SSH process '{s}' ({d}).", .{ entry.key_ptr.*, entry.value_ptr.ssh.pid });
+            entry.value_ptr.ssh.kill();
+        }
+    } else {
+        log.info("Callback thread for SSH process '{s}' ({d}) has started.", .{ entry.key_ptr.*, entry.value_ptr.ssh.pid });
+
+        entry.value_ptr.ssh.wait();
+        log.info("SSH process '{s}' ({d}) has exited.", .{ entry.key_ptr.*, entry.value_ptr.ssh.pid });
+        entry.value_ptr.ssh.deinit();
+
+        self.remove(entry);
     }
+}
+
+fn spawnManageThread(self: *Self, entry: Entry) !void {
+    const thread = try Thread.spawn(.{}, runExitHandler, .{ self, entry });
+    thread.detach();
 }
 
 pub fn execute(self: *Self, action: *Action) !void {
     switch (action.type) {
         .ssh => {
-            const key = try fmt.allocPrint(self.allocator, "ssh:{s}", .{action.host});
-
-            const result = try self.processes.getOrPut(key);
+            const result = try self.processes.getOrPut(action.host);
             if (result.found_existing) {
-                defer self.allocator.free(key);
-                writeLog("Process '{s}' ({d}) is already running.", .{ .key_ptr = result.key_ptr, .value_ptr = result.value_ptr });
+                log.info("SSH Process '{s}' ({d}) is already running.", .{ action.host, result.value_ptr.ssh.pid });
                 return;
             }
 
-            result.value_ptr.* = try Process.init(self.allocator, "ssh.exe {s}", .{action.host});
-            const entry: Entry = .{ .key_ptr = result.key_ptr, .value_ptr = result.value_ptr };
-            writeLog("Started process '{s}' ({d}).", entry);
+            result.key_ptr.* = try self.allocator.dupe(u8, action.host);
+            result.value_ptr.* = .{
+                .ssh = try Process.init(self.allocator, "ssh.exe {s}", .{action.host}),
+                .rdp = null,
+            };
+            log.info("SSH Process '{s}' ({d}) has started.", .{ action.host, result.value_ptr.ssh.pid });
 
-            try self.spawnManageThread(entry, null);
+            try self.spawnManageThread(.{ .key_ptr = result.key_ptr, .value_ptr = result.value_ptr });
         },
         .rdp => {
-            const ssh_key = try fmt.allocPrint(self.allocator, "ssh:{s}", .{action.host});
-            defer self.allocator.free(ssh_key);
-
-            if (self.processes.getEntry(ssh_key)) |ssh_entry| {
-                if (!ssh_entry.value_ptr.isAlive()) {
-                    writeLog("Process '{s}' ({d}) has exited.", ssh_entry);
-                    return;
-                }
-            } else {
-                log.info("Process '{s}' is unavailable.", .{ssh_key});
+            const result = try self.processes.getOrPut(action.host);
+            if (!result.found_existing) {
+                log.info("SSH process '{s}' is unavailable.", .{action.host});
                 return;
             }
 
-            const key = try fmt.allocPrint(self.allocator, "rdp:{s}", .{action.host});
-
-            const result = try self.processes.getOrPut(key);
-            if (result.found_existing) {
-                defer self.allocator.free(key);
-                writeLog("Process '{s}' ({d}) is already running.", .{ .key_ptr = result.key_ptr, .value_ptr = result.value_ptr });
+            if (result.value_ptr.rdp) |rdp_process| {
+                log.info("RDP Process '{s}' ({d}) is already running.", .{ action.host, rdp_process.pid });
                 return;
             }
 
@@ -130,11 +121,10 @@ pub fn execute(self: *Self, action: *Action) !void {
             defer self.allocator.free(file_path);
             log.info("Created RDP config file '{s}'.", .{file_path});
 
-            result.value_ptr.* = try Process.init(self.allocator, "mstsc.exe {s}", .{file_path});
-            const entry: Entry = .{ .key_ptr = result.key_ptr, .value_ptr = result.value_ptr };
-            writeLog("Started process '{s}' ({d}).", entry);
+            result.value_ptr.*.rdp = try Process.init(self.allocator, "mstsc.exe {s}", .{file_path});
+            log.info("RDP Process '{s}' ({d}) has started.", .{ action.host, result.value_ptr.rdp.?.pid });
 
-            try self.spawnManageThread(entry, exitSSHTunnel);
+            try self.spawnManageThread(.{ .key_ptr = result.key_ptr, .value_ptr = result.value_ptr });
         },
     }
 }

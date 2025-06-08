@@ -1,15 +1,16 @@
 const std = @import("std");
 const debug = std.debug;
-const heap = std.heap;
 const io = std.io;
 const json = std.json;
 const net = std.net;
+const Address = std.net.Address;
+const GeneralPurposeAllocator = std.heap.GeneralPurposeAllocator;
 const config = @import("config");
 const clap = @import("clap");
 const Action = @import("Action.zig");
 
 pub fn main() !void {
-    var general_purpose_allocator = heap.GeneralPurposeAllocator(.{}){};
+    var general_purpose_allocator = GeneralPurposeAllocator(.{}){};
     defer debug.assert(general_purpose_allocator.deinit() == .ok);
     const allocator = general_purpose_allocator.allocator();
 
@@ -55,7 +56,7 @@ pub fn main() !void {
 }
 
 fn send(action: Action) !void {
-    const address = try net.Address.parseIp4("127.0.0.1", 1999);
+    const address = try Address.parseIp4(config.app_host, config.app_port);
     var stream = net.tcpConnectToAddress(address) catch |err| {
         io.getStdErr().writer().print("{s}: Failed to connect to {}.", .{ @errorName(err), address }) catch {};
         return;

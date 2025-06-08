@@ -1,15 +1,17 @@
 const std = @import("std");
 const fmt = std.fmt;
 const fs = std.fs;
-const mem = std.mem;
+const path = std.fs.path;
+const Allocator = std.mem.Allocator;
 const config = @import("config");
 
-pub fn writeConfig(allocator: mem.Allocator, address: []const u8, user: []const u8) ![]const u8 {
+const file_name = config.app_name ++ ".rdp";
+
+pub fn writeConfig(allocator: Allocator, address: []const u8, user: []const u8) ![]const u8 {
     const directory_path = try fs.selfExeDirPathAlloc(allocator);
     defer allocator.free(directory_path);
 
-    const file_name = try fmt.allocPrint(allocator, "{s}.rdp", .{config.app_name});
-    const file_path = try fs.path.join(allocator, &.{ directory_path, file_name });
+    const file_path = try path.join(allocator, &.{ directory_path, file_name });
 
     const file = try fs.createFileAbsolute(file_path, .{});
     defer file.close();

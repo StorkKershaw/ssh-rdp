@@ -4,9 +4,11 @@ const SemanticVersion = std.SemanticVersion;
 const config = .{
     .app_name_server = "ssh-rdpd",
     .app_name_client = "ssh-rdp",
-    .app_version = "0.0.5",
+    .app_version = "0.0.6",
     .app_publisher = "StorkKershaw",
     .app_url = "https://github.com/StorkKershaw/ssh-rdp",
+    .app_host = "127.0.0.1",
+    .app_port = 1999,
 };
 
 pub fn build(b: *std.Build) void {
@@ -45,6 +47,8 @@ pub fn build(b: *std.Build) void {
     const server_option = b.addOptions();
     server_option.addOption([]const u8, "app_name", config.app_name_server);
     server_option.addOption([]const u8, "app_version", config.app_version);
+    server_option.addOption([]const u8, "app_host", config.app_host);
+    server_option.addOption(u16, "app_port", config.app_port);
     server_exe.root_module.addOptions("config", server_option);
     server_exe.root_module.addImport("win32", win32.module("win32"));
 
@@ -69,6 +73,8 @@ pub fn build(b: *std.Build) void {
     const client_option = b.addOptions();
     client_option.addOption([]const u8, "app_name", config.app_name_client);
     client_option.addOption([]const u8, "app_version", config.app_version);
+    client_option.addOption([]const u8, "app_host", config.app_host);
+    client_option.addOption(u16, "app_port", config.app_port);
     client_exe.root_module.addOptions("config", client_option);
     client_exe.root_module.addImport("clap", clap.module("clap"));
 
@@ -78,8 +84,8 @@ pub fn build(b: *std.Build) void {
     const server_run = b.addRunArtifact(server_exe);
     const client_run = b.addRunArtifact(client_exe);
 
-    server_run.step.dependOn(b.getInstallStep());
-    client_run.step.dependOn(b.getInstallStep());
+    server_run.step.dependOn(&server_install.step);
+    client_run.step.dependOn(&client_install.step);
 
     if (b.args) |args| {
         server_run.addArgs(args);
