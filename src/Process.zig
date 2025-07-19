@@ -1,5 +1,6 @@
 const std = @import("std");
 const fmt = std.fmt;
+const log = std.log;
 const mem = std.mem;
 const unicode = std.unicode;
 const windows = std.os.windows;
@@ -10,23 +11,30 @@ const threading = win32.system.threading;
 const Self = @This();
 
 allocator: Allocator,
+command_line: []const u8,
 process_handle: foundation.HANDLE,
 thread_handle: foundation.HANDLE,
 pid: u32,
 
-pub fn init(allocator: Allocator, comptime format: []const u8, values: anytype) !Self {
-    const command_line_utf8 = try fmt.allocPrint(allocator, format, values);
-    defer allocator.free(command_line_utf8);
+pub fn format(self: Self, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
+    _ = try writer.print(
+        "command_line = '{s}', pid = {d}",
+        .{ self.command_line, self.pid },
+    );
+}
 
-    const command_line = try unicode.utf8ToUtf16LeAllocZ(allocator, command_line_utf8);
-    defer allocator.free(command_line);
+pub fn init(allocator: Allocator, comptime command_format: []const u8, values: anytype) !Self {
+    const command_line = try fmt.allocPrint(allocator, command_format, values);
+
+    const command_line_utf16 = try unicode.utf8ToUtf16LeAllocZ(allocator, command_line);
+    defer allocator.free(command_line_utf16);
 
     var startup_info = mem.zeroInit(threading.STARTUPINFOW, .{ .cb = @sizeOf(threading.STARTUPINFOW) });
     var process_info = mem.zeroInit(threading.PROCESS_INFORMATION, .{});
 
     _ = threading.CreateProcessW(
         null,
-        command_line.ptr,
+        command_line_utf16.ptr,
         null,
         null,
         windows.FALSE,
@@ -39,36 +47,35 @@ pub fn init(allocator: Allocator, comptime format: []const u8, values: anytype) 
 
     const pid = threading.GetProcessId(process_info.hProcess);
 
-    return .{
+    const self = Self{
         .allocator = allocator,
+        .command_line = command_line,
         .process_handle = process_info.hProcess.?,
         .thread_handle = process_info.hThread.?,
         .pid = pid,
     };
+
+    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+
+    return self;
 }
 
-pub fn deinit(self: *Self) void {
-    _ = foundation.CloseHandle(self.process_handle);
+pub fn deinit(self: Self) void {
+    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+
+    self.allocator.free(self.command_line);
     _ = foundation.CloseHandle(self.thread_handle);
-}
-
-pub fn isAlive(self: *const Self) bool {
-    var exit_code: u32 = undefined;
-    if (threading.GetExitCodeProcess(self.process_handle, &exit_code) == 0) {
-        return false;
-    }
-
-    return exit_code == foundation.STILL_ACTIVE;
-}
-
-pub fn wait(self: *const Self) void {
-    _ = threading.WaitForSingleObject(self.process_handle, windows.INFINITE);
-}
-
-pub fn waitWith(self: *const Self, other: *const Self) void {
-    _ = threading.WaitForMultipleObjects(2, &.{ self.process_handle, other.process_handle }, windows.FALSE, windows.INFINITE);
+    _ = foundation.CloseHandle(self.process_handle);
 }
 
 pub fn kill(self: *const Self) void {
+    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+
     _ = threading.TerminateProcess(self.process_handle, 0);
+}
+
+pub fn wait(self: *const Self) void {
+    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+
+    _ = threading.WaitForSingleObject(self.process_handle, windows.INFINITE);
 }
