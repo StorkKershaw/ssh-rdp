@@ -10,9 +10,8 @@ const file_system = win32.storage.file_system;
 const foundation = win32.foundation;
 const pipes = win32.system.pipes;
 const config = @import("config");
-const Credential = @import("Credential.zig");
 
-fn read(allocator: Allocator, hostname: []const u8) ![]const u8 {
+pub fn read(allocator: Allocator, hostname: []const u8) ![]const u8 {
     const pipe_name = try fmt.allocPrint(allocator, "\\\\.\\pipe\\{s}-{s}", .{ config.app_name, hostname });
     defer allocator.free(pipe_name);
 
@@ -54,10 +53,4 @@ fn read(allocator: Allocator, hostname: []const u8) ![]const u8 {
     const message = iterator.next() orelse "";
     log.info("[{s}] message = '{s}'", .{ @src().fn_name, message });
     return allocator.dupe(u8, message);
-}
-
-pub fn parse(allocator: Allocator, hostname: []const u8) !Credential {
-    const message = try read(allocator, hostname);
-    defer allocator.free(message);
-    return Credential.parse(allocator, hostname, message);
 }

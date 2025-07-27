@@ -6,8 +6,6 @@ const mem = std.mem;
 const path = std.fs.path;
 const unicode = std.unicode;
 const Allocator = std.mem.Allocator;
-const ArenaAllocator = std.heap.ArenaAllocator;
-const clap = @import("clap");
 const win32 = @import("win32");
 const credentials = win32.security.credentials;
 const config = @import("config");
@@ -20,8 +18,8 @@ address: []const u8,
 config_path: []const u8,
 silent: bool,
 windowed: bool,
-width: ?usize,
-height: ?usize,
+width: ?i32,
+height: ?i32,
 
 pub fn format(self: Self, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
     _ = try writer.print(
@@ -37,11 +35,11 @@ const InitOptions = struct {
     address: []const u8,
     silent: bool,
     windowed: bool,
-    width: ?usize,
-    height: ?usize,
+    width: ?i32,
+    height: ?i32,
 };
 
-fn init(allocator: Allocator, options: InitOptions) !Self {
+pub fn init(allocator: Allocator, options: InitOptions) !Self {
     const directory_path = try fs.selfExeDirPathAlloc(allocator);
     defer allocator.free(directory_path);
 
@@ -61,51 +59,6 @@ fn init(allocator: Allocator, options: InitOptions) !Self {
         .width = options.width,
         .height = options.height,
     };
-}
-
-pub fn parse(allocator: Allocator, hostname: []const u8, message: []const u8) !Self {
-    var arena = ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const parse_allocator = arena.allocator();
-
-    const parameters = comptime clap.parseParamsComptime(
-        \\--user <str>
-        \\--password <str>
-        \\--address <str>
-        \\--silent
-        \\--windowed
-        \\--width <usize>
-        \\--height <usize>
-    );
-
-    var diagnostic: clap.Diagnostic = .{};
-    var iterator = mem.tokenizeScalar(u8, message, ' ');
-    var response = try clap.parseEx(
-        clap.Help,
-        &parameters,
-        clap.parsers.default,
-        &iterator,
-        .{
-            .diagnostic = &diagnostic,
-            .allocator = parse_allocator,
-        },
-    );
-    defer response.deinit();
-
-    const self = try init(allocator, .{
-        .hostname = hostname,
-        .username = response.args.user.?,
-        .password = response.args.password,
-        .address = response.args.address.?,
-        .silent = response.args.silent != 0,
-        .windowed = response.args.windowed != 0,
-        .width = response.args.width,
-        .height = response.args.height,
-    });
-
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
-
-    return self;
 }
 
 pub fn deinit(self: Self) void {

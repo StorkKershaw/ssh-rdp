@@ -38,7 +38,7 @@ pub fn deinit(self: *Self) void {
     _ = windows_and_messaging.MessageBoxW(
         null,
         message.ptr,
-        unicode.utf8ToUtf16LeStringLiteral(config.app_name),
+        unicode.utf8ToUtf16LeStringLiteral(config.app_name ++ " v" ++ config.app_version),
         windows_and_messaging.MB_OK,
     );
 }
