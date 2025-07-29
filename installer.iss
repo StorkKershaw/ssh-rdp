@@ -38,6 +38,3 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "{#OutputDir}\{#AppName}.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
-
-[Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppName}.exe"
