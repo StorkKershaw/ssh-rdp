@@ -35,6 +35,9 @@ WizardStyle=modern
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Icons]
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"
+
 [Files]
 Source: "{#OutputDir}\{#AppName}.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files

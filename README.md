@@ -40,3 +40,13 @@ $ zig build client   # Build and run the client in debug mode
 ```shell
 $ zig build -Doptimize=ReleaseSmall
 ```
+
+## License
+
+### Application
+
+- This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+### Icon
+
+- <a href="https://www.flaticon.com/free-icons/remote-desktop" title="remote-desktop icons">Remote-desktop icons created by Ida Desi Mariana - Flaticon</a>
