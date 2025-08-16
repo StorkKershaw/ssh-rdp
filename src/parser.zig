@@ -1,7 +1,8 @@
 const std = @import("std");
-const mem = std.mem;
+const unicode = std.unicode;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
+const ArgIteratorWindows = std.process.ArgIteratorWindows;
 const clap = @import("clap");
 const config = @import("config");
 const MessageBox = @import("MessageBox.zig");
@@ -96,13 +97,16 @@ pub fn parseCommandline(allocator: Allocator) !?ParseResult {
 pub fn parseMessage(allocator: Allocator, message: []const u8) !ParseResult {
     var arena = ArenaAllocator.init(allocator);
     defer arena.deinit();
+    const arena_allocator = arena.allocator();
 
-    var message_box = try MessageBox.init(arena.allocator());
+    var message_box = try MessageBox.init(arena_allocator);
     defer message_box.deinit();
     const writer = message_box.writer();
 
+    const message_utf16 = try unicode.utf8ToUtf16LeAlloc(arena_allocator, message);
+    var iterator = try ArgIteratorWindows.init(arena_allocator, message_utf16);
+
     var diagnostic: clap.Diagnostic = .{};
-    var iterator = mem.tokenizeScalar(u8, message, ' ');
     var response = clap.parseEx(
         clap.Help,
         &pipe_params,
@@ -110,7 +114,7 @@ pub fn parseMessage(allocator: Allocator, message: []const u8) !ParseResult {
         &iterator,
         .{
             .diagnostic = &diagnostic,
-            .allocator = arena.allocator(),
+            .allocator = arena_allocator,
         },
     ) catch |err| {
         try diagnostic.report(writer, err);

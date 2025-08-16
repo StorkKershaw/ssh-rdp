@@ -76,28 +76,26 @@ pub fn deinit(self: Self) void {
 }
 
 pub fn storePassword(self: Self) !void {
-    if (self.password) |password| {
-        log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
 
-        const target_utf16 = try unicode.utf8ToUtf16LeAllocZ(self.allocator, "TERMSRV/localhost");
-        defer self.allocator.free(target_utf16);
+    const target_utf16 = try unicode.utf8ToUtf16LeAllocZ(self.allocator, "TERMSRV/localhost");
+    defer self.allocator.free(target_utf16);
 
-        const username_utf16 = try unicode.utf8ToUtf16LeAllocZ(self.allocator, self.username);
-        defer self.allocator.free(username_utf16);
+    const username_utf16 = try unicode.utf8ToUtf16LeAllocZ(self.allocator, self.username);
+    defer self.allocator.free(username_utf16);
 
-        // `CredentialBlob` field does not need to be null-terminated.
-        const password_utf16 = try unicode.utf8ToUtf16LeAlloc(self.allocator, password);
-        defer self.allocator.free(password_utf16);
+    // `CredentialBlob` field does not need to be null-terminated.
+    const password_utf16 = try unicode.utf8ToUtf16LeAlloc(self.allocator, self.password orelse "");
+    defer self.allocator.free(password_utf16);
 
-        var credential = mem.zeroInit(credentials.CREDENTIALW, .{ .Type = credentials.CRED_TYPE_DOMAIN_PASSWORD });
-        credential.TargetName = target_utf16.ptr;
-        credential.CredentialBlobSize = @intCast(password_utf16.len * @sizeOf(u16));
-        credential.CredentialBlob = @ptrCast(password_utf16.ptr);
-        credential.Persist = credentials.CRED_PERSIST_SESSION;
-        credential.UserName = username_utf16.ptr;
+    var credential = mem.zeroInit(credentials.CREDENTIALW, .{ .Type = credentials.CRED_TYPE_DOMAIN_PASSWORD });
+    credential.TargetName = target_utf16.ptr;
+    credential.CredentialBlobSize = @intCast(password_utf16.len * @sizeOf(u16));
+    credential.CredentialBlob = @ptrCast(password_utf16.ptr);
+    credential.Persist = credentials.CRED_PERSIST_SESSION;
+    credential.UserName = username_utf16.ptr;
 
-        _ = credentials.CredWriteW(&credential, 0);
-    }
+    _ = credentials.CredWriteW(&credential, 0);
 }
 
 pub fn writeConfig(self: Self) !void {
