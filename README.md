@@ -31,8 +31,7 @@
 ### Running in Debug Mode
 
 ```shell
-$ zig build server   # Build and run the server in debug mode
-$ zig build client   # Build and run the client in debug mode
+$ zig build run # Build and run the application in debug mode
 ```
 
 ### Building for Release

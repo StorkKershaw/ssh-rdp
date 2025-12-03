@@ -48,7 +48,7 @@ pub fn init(allocator: Allocator, options: InitOptions) !Self {
 
     const config_path = try path.join(allocator, &.{ directory_path, file_name });
 
-    return Self{
+    const credential = Self{
         .allocator = allocator,
         .username = try allocator.dupe(u8, options.username),
         .password = if (options.password) |password| try allocator.dupe(u8, password) else null,
@@ -59,14 +59,19 @@ pub fn init(allocator: Allocator, options: InitOptions) !Self {
         .width = options.width,
         .height = options.height,
     };
+
+    try credential.register();
+    try credential.createConfig();
+
+    return credential;
 }
 
 pub fn deinit(self: Self) void {
     log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
 
-    fs.deleteFileAbsolute(self.config_path) catch |err| {
-        log.warn("[{s}.{s}] Failed to delete config file: {}", .{ @typeName(Self), @src().fn_name, err });
-    };
+    self.unregister();
+    self.deleteConfig();
+
     self.allocator.free(self.config_path);
     self.allocator.free(self.address);
     if (self.password) |password| {
@@ -75,7 +80,7 @@ pub fn deinit(self: Self) void {
     self.allocator.free(self.username);
 }
 
-pub fn storePassword(self: Self) !void {
+fn register(self: Self) !void {
     log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
 
     const target_utf16 = try unicode.utf8ToUtf16LeAllocZ(self.allocator, "TERMSRV/localhost");
@@ -98,7 +103,19 @@ pub fn storePassword(self: Self) !void {
     _ = credentials.CredWriteW(&credential, 0);
 }
 
-pub fn writeConfig(self: Self) !void {
+fn unregister(self: Self) void {
+    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+
+    const target_utf16 = unicode.utf8ToUtf16LeAllocZ(self.allocator, "TERMSRV/localhost") catch |err| {
+        log.warn("[{s}.{s}] Failed to allocate target UTF-16: {}", .{ @typeName(Self), @src().fn_name, err });
+        return;
+    };
+    defer self.allocator.free(target_utf16);
+
+    _ = credentials.CredDeleteW(target_utf16.ptr, @intFromEnum(credentials.CRED_TYPE_DOMAIN_PASSWORD), 0);
+}
+
+fn createConfig(self: Self) !void {
     log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
 
     const file = try fs.createFileAbsolute(self.config_path, .{});
@@ -128,4 +145,12 @@ pub fn writeConfig(self: Self) !void {
     if (self.height) |height| {
         try writer.print("desktopheight:i:{d}\n", .{height});
     }
+}
+
+fn deleteConfig(self: Self) void {
+    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+
+    fs.deleteFileAbsolute(self.config_path) catch |err| {
+        log.warn("[{s}.{s}] Failed to delete config file: {}", .{ @typeName(Self), @src().fn_name, err });
+    };
 }

@@ -33,8 +33,6 @@ pub fn main() !void {
         .height = command_result.height orelse pipe_result.height,
     });
     defer credential.deinit();
-    try credential.storePassword();
-    try credential.writeConfig();
 
     var tsc_process = try Process.init(allocator, "mstsc.exe {s}", .{credential.config_path});
     defer tsc_process.deinit();

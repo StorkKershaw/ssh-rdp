@@ -3,7 +3,7 @@ const SemanticVersion = std.SemanticVersion;
 
 const config = .{
     .app_name = "ssh-rdp",
-    .app_version = "0.0.11",
+    .app_version = "0.0.12",
     .app_publisher = "StorkKershaw",
     .app_url = "https://github.com/StorkKershaw/ssh-rdp",
 };
