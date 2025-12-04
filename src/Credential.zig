@@ -6,6 +6,7 @@ const mem = std.mem;
 const path = std.fs.path;
 const unicode = std.unicode;
 const Allocator = std.mem.Allocator;
+const Writer = std.Io.Writer;
 const win32 = @import("win32");
 const credentials = win32.security.credentials;
 const config = @import("config");
@@ -21,7 +22,7 @@ windowed: bool,
 width: ?i32,
 height: ?i32,
 
-pub fn format(self: Self, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
+pub fn format(self: Self, writer: *Writer) !void {
     _ = try writer.print(
         "username = '{s}', address = '{s}', config_path = '{s}', silent = {}, windowed = {}, width = {?}, height = {?}",
         .{ self.username, self.address, self.config_path, self.silent, self.windowed, self.width, self.height },
@@ -67,7 +68,7 @@ pub fn init(allocator: Allocator, options: InitOptions) !Self {
 }
 
 pub fn deinit(self: Self) void {
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     self.unregister();
     self.deleteConfig();
@@ -81,7 +82,7 @@ pub fn deinit(self: Self) void {
 }
 
 fn register(self: Self) !void {
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     const target_utf16 = try unicode.utf8ToUtf16LeAllocZ(self.allocator, "TERMSRV/localhost");
     defer self.allocator.free(target_utf16);
@@ -93,18 +94,20 @@ fn register(self: Self) !void {
     const password_utf16 = try unicode.utf8ToUtf16LeAlloc(self.allocator, self.password orelse "");
     defer self.allocator.free(password_utf16);
 
-    var credential = mem.zeroInit(credentials.CREDENTIALW, .{ .Type = credentials.CRED_TYPE_DOMAIN_PASSWORD });
-    credential.TargetName = target_utf16.ptr;
-    credential.CredentialBlobSize = @intCast(password_utf16.len * @sizeOf(u16));
-    credential.CredentialBlob = @ptrCast(password_utf16.ptr);
-    credential.Persist = credentials.CRED_PERSIST_SESSION;
-    credential.UserName = username_utf16.ptr;
+    var credential = mem.zeroInit(credentials.CREDENTIALW, .{
+        .Type = credentials.CRED_TYPE_DOMAIN_PASSWORD,
+        .TargetName = target_utf16.ptr,
+        .CredentialBlobSize = @as(u32, @intCast(password_utf16.len * @sizeOf(u16))),
+        .CredentialBlob = @as(*u8, @ptrCast(password_utf16.ptr)),
+        .Persist = credentials.CRED_PERSIST_SESSION,
+        .UserName = username_utf16.ptr,
+    });
 
     _ = credentials.CredWriteW(&credential, 0);
 }
 
 fn unregister(self: Self) void {
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     const target_utf16 = unicode.utf8ToUtf16LeAllocZ(self.allocator, "TERMSRV/localhost") catch |err| {
         log.warn("[{s}.{s}] Failed to allocate target UTF-16: {}", .{ @typeName(Self), @src().fn_name, err });
@@ -116,12 +119,18 @@ fn unregister(self: Self) void {
 }
 
 fn createConfig(self: Self) !void {
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     const file = try fs.createFileAbsolute(self.config_path, .{});
     defer file.close();
 
-    const writer = file.writer();
+    var buffer: [0xFFFF]u8 = undefined;
+    var file_writer = file.writer(&buffer);
+    var writer = &file_writer.interface;
+    defer writer.flush() catch |err| {
+        log.warn("[{s}.{s}] Failed to flush file writer: {}", .{ @typeName(Self), @src().fn_name, err });
+    };
+
     try writer.print(
         \\full address:s:{s}
         \\username:s:{s}
@@ -148,7 +157,7 @@ fn createConfig(self: Self) !void {
 }
 
 fn deleteConfig(self: Self) void {
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     fs.deleteFileAbsolute(self.config_path) catch |err| {
         log.warn("[{s}.{s}] Failed to delete config file: {}", .{ @typeName(Self), @src().fn_name, err });

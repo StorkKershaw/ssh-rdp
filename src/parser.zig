@@ -3,6 +3,7 @@ const unicode = std.unicode;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const ArgIteratorWindows = std.process.ArgIteratorWindows;
+const Writer = std.Io.Writer;
 const clap = @import("clap");
 const config = @import("config");
 const MessageBox = @import("MessageBox.zig");
@@ -35,7 +36,7 @@ const HelpType = union(enum) {
     pipe,
 };
 
-fn help(writer: anytype, help_type: HelpType) !void {
+fn help(writer: *Writer, help_type: HelpType) !void {
     switch (help_type) {
         .command => {
             try writer.print("$ {s} [options] [hostname]\n\n", .{config.app_name});

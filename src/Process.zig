@@ -5,6 +5,7 @@ const mem = std.mem;
 const unicode = std.unicode;
 const windows = std.os.windows;
 const Allocator = std.mem.Allocator;
+const Writer = std.Io.Writer;
 const win32 = @import("win32");
 const foundation = win32.foundation;
 const threading = win32.system.threading;
@@ -16,7 +17,7 @@ process_handle: foundation.HANDLE,
 thread_handle: foundation.HANDLE,
 pid: u32,
 
-pub fn format(self: Self, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
+pub fn format(self: Self, writer: *Writer) !void {
     _ = try writer.print(
         "command_line = '{s}', pid = {d}",
         .{ self.command_line, self.pid },
@@ -55,13 +56,13 @@ pub fn init(allocator: Allocator, comptime command_format: []const u8, values: a
         .pid = pid,
     };
 
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     return self;
 }
 
 pub fn deinit(self: Self) void {
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     self.allocator.free(self.command_line);
     _ = foundation.CloseHandle(self.thread_handle);
@@ -69,13 +70,13 @@ pub fn deinit(self: Self) void {
 }
 
 pub fn kill(self: *const Self) void {
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     _ = threading.TerminateProcess(self.process_handle, 0);
 }
 
 pub fn wait(self: *const Self) void {
-    log.info("[{s}.{s}] {s}", .{ @typeName(Self), @src().fn_name, self });
+    log.info("[{s}.{s}] {f}", .{ @typeName(Self), @src().fn_name, self });
 
     _ = threading.WaitForSingleObject(self.process_handle, windows.INFINITE);
 }

@@ -3,7 +3,7 @@ const SemanticVersion = std.SemanticVersion;
 
 const config = .{
     .app_name = "ssh-rdp",
-    .app_version = "0.0.12",
+    .app_version = "0.0.13",
     .app_publisher = "StorkKershaw",
     .app_url = "https://github.com/StorkKershaw/ssh-rdp",
 };
@@ -26,9 +26,11 @@ pub fn build(b: *std.Build) void {
     const win32 = b.dependency("win32", .{});
     const executable = b.addExecutable(.{
         .name = config.app_name,
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     executable.subsystem = if (optimize == .Debug) .Console else .Windows;
     executable.addWin32ResourceFile(.{

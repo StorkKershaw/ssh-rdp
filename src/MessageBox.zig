@@ -2,6 +2,8 @@ const std = @import("std");
 const debug = std.debug;
 const unicode = std.unicode;
 const Allocator = std.mem.Allocator;
+const Writer = std.Io.Writer;
+const Allocating = std.Io.Writer.Allocating;
 const win32 = @import("win32");
 const windows_and_messaging = win32.ui.windows_and_messaging;
 const config = @import("config");
@@ -9,35 +11,36 @@ const Buffer = std.ArrayList(u8);
 const Self = @This();
 
 allocator: Allocator,
-buffer: Buffer,
+buffer: Allocating,
 
 pub fn init(allocator: Allocator) !Self {
     return .{
         .allocator = allocator,
-        .buffer = try Buffer.initCapacity(allocator, 1024),
+        .buffer = try Allocating.initCapacity(allocator, 1024),
     };
 }
 
-pub fn writer(self: *Self) Buffer.Writer {
-    return self.buffer.writer();
+pub fn writer(self: *Self) *Writer {
+    return &self.buffer.writer;
 }
 
 pub fn deinit(self: *Self) void {
     defer self.buffer.deinit();
 
-    if (self.buffer.items.len == 0) {
+    const message = self.buffer.written();
+    if (message.len == 0) {
         return;
     }
 
-    const message = unicode.utf8ToUtf16LeAllocZ(self.allocator, self.buffer.items) catch |err| {
+    const message_utf16 = unicode.utf8ToUtf16LeAllocZ(self.allocator, message) catch |err| {
         debug.print("Failed to convert message to UTF-16: {}\n", .{err});
         return;
     };
-    defer self.allocator.free(message);
+    defer self.allocator.free(message_utf16);
 
     _ = windows_and_messaging.MessageBoxW(
         null,
-        message.ptr,
+        message_utf16.ptr,
         unicode.utf8ToUtf16LeStringLiteral(config.app_name ++ " v" ++ config.app_version),
         windows_and_messaging.MB_OK,
     );

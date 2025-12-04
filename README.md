@@ -25,7 +25,7 @@
 
 ### Prerequisites
 
-- Zig 0.14.0
+- Zig 0.15.2
 - Inno Setup 6 Command-Line Compiler (ISCC)
 
 ### Running in Debug Mode
