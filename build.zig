@@ -1,14 +1,15 @@
 const std = @import("std");
+const Build = std.Build;
 const SemanticVersion = std.SemanticVersion;
 
 const config = .{
     .app_name = "ssh-rdp",
-    .app_version = "0.0.13",
+    .app_version = @import("build.zig.zon").version,
     .app_publisher = "StorkKershaw",
     .app_url = "https://github.com/StorkKershaw/ssh-rdp",
 };
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *Build) void {
     const version = SemanticVersion.parse(config.app_version) catch @panic("Invalid semantic version.");
 
     // Standard target options allows the person running `zig build` to choose
