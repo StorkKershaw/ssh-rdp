@@ -17,11 +17,8 @@ process_handle: foundation.HANDLE,
 thread_handle: foundation.HANDLE,
 pid: u32,
 
-pub fn format(self: Self, writer: *Writer) !void {
-    _ = try writer.print(
-        "command_line = '{s}', pid = {d}",
-        .{ self.command_line, self.pid },
-    );
+pub fn format(self: Self, w: *Writer) !void {
+    _ = try w.print("command_line = '{s}', pid = {d}", .{ self.command_line, self.pid });
 }
 
 pub fn init(allocator: Allocator, comptime command_format: []const u8, values: anytype) !Self {

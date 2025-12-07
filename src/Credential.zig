@@ -22,9 +22,9 @@ windowed: bool,
 width: ?i32,
 height: ?i32,
 
-pub fn format(self: Self, writer: *Writer) !void {
-    _ = try writer.print(
-        "username = '{s}', address = '{s}', config_path = '{s}', silent = {}, windowed = {}, width = {?}, height = {?}",
+pub fn format(self: Self, w: *Writer) !void {
+    _ = try w.print(
+        "username = '{s}', address = '{s}', config_path = '{s}', silent = {}, windowed = {}, width = {?d}, height = {?d}",
         .{ self.username, self.address, self.config_path, self.silent, self.windowed, self.width, self.height },
     );
 }
@@ -126,7 +126,7 @@ fn createConfig(self: Self) !void {
 
     var buffer: [0xFFFF]u8 = undefined;
     var file_writer = file.writer(&buffer);
-    var writer = &file_writer.interface;
+    const writer = &file_writer.interface;
     defer writer.flush() catch |err| {
         log.warn("[{s}.{s}] Failed to flush file writer: {}", .{ @typeName(Self), @src().fn_name, err });
     };

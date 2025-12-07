@@ -2,26 +2,23 @@ const std = @import("std");
 const debug = std.debug;
 const GeneralPurposeAllocator = std.heap.GeneralPurposeAllocator;
 const Credential = @import("Credential.zig");
-const Process = @import("Process.zig");
-const named_pipe = @import("named_pipe.zig");
 const parser = @import("parser.zig");
+const Process = @import("Process.zig");
 
 pub fn main() !void {
     var general_purpose_allocator = GeneralPurposeAllocator(.{}){};
     defer debug.assert(general_purpose_allocator.deinit() == .ok);
     const allocator = general_purpose_allocator.allocator();
 
-    var command_result = try parser.parseCommandline(allocator) orelse return;
+    var command_result = try parser.parse(allocator, .command) orelse return;
     defer command_result.deinit();
 
     var ssh_process = try Process.init(allocator, "ssh.exe {s}", .{command_result.hostname});
     defer ssh_process.deinit();
 
-    const message = try named_pipe.read(allocator, command_result.hostname);
-    defer allocator.free(message);
-
-    var pipe_result = try parser.parseMessage(allocator, message);
+    var pipe_result = try parser.parse(allocator, .{ .pipe = command_result.hostname }) orelse return;
     defer pipe_result.deinit();
+
     var credential = try Credential.init(allocator, .{
         .hostname = command_result.hostname,
         .username = command_result.username orelse pipe_result.username orelse "",

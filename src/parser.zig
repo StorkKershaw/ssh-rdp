@@ -1,12 +1,15 @@
 const std = @import("std");
 const unicode = std.unicode;
+const windows = std.os.windows;
 const Allocator = std.mem.Allocator;
-const ArenaAllocator = std.heap.ArenaAllocator;
 const ArgIteratorWindows = std.process.ArgIteratorWindows;
 const Writer = std.Io.Writer;
 const clap = @import("clap");
+const Diagnostic = clap.Diagnostic;
+const Help = clap.Help;
 const config = @import("config");
 const MessageBox = @import("MessageBox.zig");
+const named_pipe = @import("named_pipe.zig");
 const ParseResult = @import("ParseResult.zig");
 
 const command_params = clap.parseParamsComptime(
@@ -31,107 +34,131 @@ const pipe_params = clap.parseParamsComptime(
     \\--height <i32>       The height of the window.
 );
 
-const HelpType = union(enum) {
+const Source = union(enum) {
     command,
-    pipe,
+    pipe: []const u8,
+
+    const Self = @This();
+
+    fn usage(self: Self, writer: *Writer) !void {
+        switch (self) {
+            .command => {
+                try writer.print(
+                    \\Usage: $ {s} [options] <hostname>
+                    \\
+                    \\
+                ,
+                    .{config.app_name},
+                );
+                try clap.help(writer, Help, &command_params, .{});
+            },
+            .pipe => {
+                try writer.print(
+                    \\Usage: $ echo [options] > \\.\pipe\{s}-<hostname>
+                    \\
+                    \\
+                ,
+                    .{config.app_name},
+                );
+                try clap.help(writer, Help, &pipe_params, .{});
+            },
+        }
+    }
+
+    fn parse(self: Self, allocator: Allocator, writer: *Writer) !?ParseResult {
+        switch (self) {
+            .command => {
+                const commandline = windows.peb().ProcessParameters.CommandLine;
+                const commandline_utf16 = commandline.Buffer.?[0 .. commandline.Length / 2];
+
+                var iterator = try ArgIteratorWindows.init(allocator, commandline_utf16);
+                defer iterator.deinit();
+
+                var diagnostic: Diagnostic = .{};
+                var result = clap.parseEx(
+                    Help,
+                    &command_params,
+                    clap.parsers.default,
+                    &iterator,
+                    .{
+                        .allocator = allocator,
+                        .diagnostic = &diagnostic,
+                    },
+                ) catch |err| {
+                    try diagnostic.report(writer, err);
+                    try writer.writeByte('\n');
+                    return null;
+                };
+                defer result.deinit();
+
+                if (result.args.help != 0) {
+                    return null;
+                }
+
+                if (result.positionals[0]) |hostname| {
+                    return try ParseResult.init(allocator, .{
+                        .hostname = hostname,
+                        .username = result.args.user,
+                        .password = result.args.password,
+                        .address = result.args.address,
+                        .silent = result.args.silent != 0,
+                        .windowed = result.args.windowed != 0,
+                        .width = result.args.width,
+                        .height = result.args.height,
+                    });
+                } else {
+                    return null;
+                }
+            },
+            .pipe => |hostname| {
+                const message = try named_pipe.read(allocator, hostname);
+                defer allocator.free(message);
+
+                const message_utf16 = try unicode.utf8ToUtf16LeAlloc(allocator, message);
+                defer allocator.free(message_utf16);
+
+                var iterator = try ArgIteratorWindows.init(allocator, message_utf16);
+                defer iterator.deinit();
+
+                var diagnostic: Diagnostic = .{};
+                var result = clap.parseEx(
+                    Help,
+                    &pipe_params,
+                    clap.parsers.default,
+                    &iterator,
+                    .{
+                        .allocator = allocator,
+                        .diagnostic = &diagnostic,
+                    },
+                ) catch |err| {
+                    try diagnostic.report(writer, err);
+                    try writer.writeByte('\n');
+                    return null;
+                };
+                defer result.deinit();
+
+                return try ParseResult.init(allocator, .{
+                    .hostname = "",
+                    .username = result.args.user,
+                    .password = result.args.password,
+                    .address = result.args.address,
+                    .silent = result.args.silent != 0,
+                    .windowed = result.args.windowed != 0,
+                    .width = result.args.width,
+                    .height = result.args.height,
+                });
+            },
+        }
+    }
 };
 
-fn help(writer: *Writer, help_type: HelpType) !void {
-    switch (help_type) {
-        .command => {
-            try writer.print("$ {s} [options] [hostname]\n\n", .{config.app_name});
-            try clap.help(writer, clap.Help, &command_params, .{});
-        },
-        .pipe => {
-            try writer.print("$ echo [options] > \\\\.\\pipe\\{s}-<hostname>\n\n", .{config.app_name});
-            try clap.help(writer, clap.Help, &pipe_params, .{});
-        },
-    }
-}
-
-pub fn parseCommandline(allocator: Allocator) !?ParseResult {
-    var arena = ArenaAllocator.init(allocator);
-    defer arena.deinit();
-
-    var message_box = try MessageBox.init(arena.allocator());
+pub fn parse(allocator: Allocator, source: Source) !?ParseResult {
+    var message_box = MessageBox.init(allocator);
     defer message_box.deinit();
     const writer = message_box.writer();
 
-    var diagnostic: clap.Diagnostic = .{};
-    var response = clap.parse(
-        clap.Help,
-        &command_params,
-        clap.parsers.default,
-        .{
-            .diagnostic = &diagnostic,
-            .allocator = arena.allocator(),
-        },
-    ) catch |err| {
-        try diagnostic.report(writer, err);
-        try help(writer, .command);
-        return err;
+    return try source.parse(allocator, writer) orelse blk: {
+        try source.usage(writer);
+        break :blk null;
     };
-    defer response.deinit();
-
-    if (response.args.help != 0) {
-        try help(writer, .command);
-        return null;
-    }
-
-    if (response.positionals[0]) |hostname| {
-        return try ParseResult.init(allocator, .{
-            .hostname = hostname,
-            .username = response.args.user,
-            .password = response.args.password,
-            .address = response.args.address,
-            .silent = response.args.silent != 0,
-            .windowed = response.args.windowed != 0,
-            .width = response.args.width,
-            .height = response.args.height,
-        });
-    } else {
-        try help(writer, .command);
-        return null;
-    }
-}
-
-pub fn parseMessage(allocator: Allocator, message: []const u8) !ParseResult {
-    var arena = ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const arena_allocator = arena.allocator();
-
-    var message_box = try MessageBox.init(arena_allocator);
-    defer message_box.deinit();
-    const writer = message_box.writer();
-
-    const message_utf16 = try unicode.utf8ToUtf16LeAlloc(arena_allocator, message);
-    var iterator = try ArgIteratorWindows.init(arena_allocator, message_utf16);
-
-    var diagnostic: clap.Diagnostic = .{};
-    var response = clap.parseEx(
-        clap.Help,
-        &pipe_params,
-        clap.parsers.default,
-        &iterator,
-        .{
-            .diagnostic = &diagnostic,
-            .allocator = arena_allocator,
-        },
-    ) catch |err| {
-        try diagnostic.report(writer, err);
-        try help(writer, .pipe);
-        return err;
-    };
-    defer response.deinit();
-
-    return try ParseResult.init(allocator, .{
-        .hostname = "",
-        .username = response.args.user,
-        .password = response.args.password,
-        .address = response.args.address,
-        .silent = response.args.silent != 0,
-        .windowed = response.args.windowed != 0,
-        .width = response.args.width,
-        .height = response.args.height,
-    });
 }
